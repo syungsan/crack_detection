@@ -24,6 +24,7 @@ def set_input_device():
 
     print(sd.default.device)
 
+
 def recording(file_path):
 
     print("now recording...")

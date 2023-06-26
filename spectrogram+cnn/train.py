@@ -1,11 +1,9 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-import keras
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
-from sklearn.model_selection import train_test_split
 from keras.models import Model
 from sklearn.neighbors import LocalOutlierFactor
 import joblib
@@ -20,6 +18,11 @@ from sklearn.manifold import TSNE
 import feature as ft
 import plot_evaluation as pe
 from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, f1_score
+from keras.layers import Input, Conv2D, GlobalAveragePooling2D, BatchNormalization
+from keras.layers import Activation, Dense, Add
+
+
+alpha = 16. # 30.
 
 
 # L2-constrained Softmax Loss
@@ -30,7 +33,7 @@ class L2ConstrainLayer(tf.keras.layers.Layer):
 
     def __init__(self, **kwargs):
         super(L2ConstrainLayer, self).__init__(**kwargs)
-        self.alpha = tf.Variable(30.) # 16.
+        self.alpha = tf.Variable(alpha)
 
     def call(self, inputs):
         # about l2_normalize https://www.tensorflow.org/api_docs/python/tf/keras/backend/l2_normalize?hl=ja
@@ -110,59 +113,92 @@ def get_data(data2ds):
     return np.array(X), ys
 
 
+def cba(inputs, filters, kernel_size, strides):
+
+    x = Conv2D(filters, kernel_size=kernel_size, strides=strides, padding='same')(inputs)
+    x = BatchNormalization()(x)
+    x = Activation("relu")(x)
+
+    return x
+
+
 def main(epochs=5, batch_size=128):
 
     if os.path.isdir("../logs/models"):
         shutil.rmtree("../logs/models")
-    os.mkdir("../logs/models")
+    os.makedirs("../logs/models", exist_ok=True)
 
     if os.path.isdir("../logs/graphs"):
         shutil.rmtree("../logs/graphs")
     os.mkdir("../logs/graphs")
 
-    features = ft.read_csv(file_path="../logs/train.csv", delimiter=",")
-    X, y = get_data(data2ds=features)
+    if os.path.exists("../logs/result.csv"):
+        os.remove("../logs/result.csv")
+
+    if os.path.isdir("../logs/tensor_board"):
+        shutil.rmtree("../logs/tensor_board")
+
+    trains = ft.read_csv(file_path="../logs/train.csv", delimiter=",")
+    X_train, y_train = get_data(data2ds=trains)
+
+    tests = ft.read_csv(file_path="../logs/test.csv", delimiter=",")
+    X_test, y_test = get_data(data2ds=tests)
 
     # one-hot vector形式に変換する
     num_of_category = len(ft.wav_labels)
-    y = to_categorical(y, num_of_category)
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1)
+    y_train = to_categorical(y_train, num_of_category)
+    y_test = to_categorical(y_test, num_of_category)
 
     scaler = MinMaxScaler()
     scaler.fit(X_train)
     scaler.transform(X_train)
     scaler.transform(X_test)
 
-    X_train = np.reshape(X_train, (X_train.shape[0], ft.interval_division_number, ft.feature_max_length), order="F")
-    X_test = np.reshape(X_test, (X_test.shape[0], ft.interval_division_number, ft.feature_max_length), order="F")
+    X_test = np.reshape(X_test, (X_test.shape[0], 257, ft.interval_division_number, 1), order="F")
+    X_train = np.reshape(X_train, (X_train.shape[0], 257, ft.interval_division_number, 1), order="F")
 
-    #Initializing model
-    model = keras.models.Sequential()
+    # define CNN
+    inputs = Input(shape=(X_train.shape[1:]))
 
-    #Adding the model layers
-    model.add(keras.layers.LSTM(256, input_shape=(X_train.shape[1:]), return_sequences=True))
-    model.add(keras.layers.Dropout(0.2))
-    model.add(keras.layers.LSTM(128))
-    model.add(keras.layers.Dense(256, activation='relu'))
-    model.add(keras.layers.Dropout(0.2))
+    x_1 = cba(inputs, filters=32, kernel_size=(1, 8), strides=(1, 2))
+    x_1 = cba(x_1, filters=32, kernel_size=(8, 1), strides=(2, 1))
+    x_1 = cba(x_1, filters=64, kernel_size=(1, 8), strides=(1, 2))
+    x_1 = cba(x_1, filters=64, kernel_size=(8, 1), strides=(2, 1))
 
-    """
-    #If you don't need to learn alpha , you can choose below way too.
-    alpha = 30
-    def l2_constrain(x):
-        return alpha * K.l2_normalize(x, axis=1)
-    model.add(layers.Lambda(l2_constrain))
-    """
+    x_2 = cba(inputs, filters=32, kernel_size=(1, 16), strides=(1, 2))
+    x_2 = cba(x_2, filters=32, kernel_size=(16, 1), strides=(2, 1))
+    x_2 = cba(x_2, filters=64, kernel_size=(1, 16), strides=(1, 2))
+    x_2 = cba(x_2, filters=64, kernel_size=(16, 1), strides=(2, 1))
 
-    model.add(L2ConstrainLayer())
-    model.add(keras.layers.Dense(num_of_category, activation='softmax'))
+    x_3 = cba(inputs, filters=32, kernel_size=(1, 32), strides=(1, 2))
+    x_3 = cba(x_3, filters=32, kernel_size=(32, 1), strides=(2, 1))
+    x_3 = cba(x_3, filters=64, kernel_size=(1, 32), strides=(1, 2))
+    x_3 = cba(x_3, filters=64, kernel_size=(32, 1), strides=(2, 1))
 
-    #Compiling the model
-    model.compile(loss="categorical_crossentropy",
-                  optimizer=Adam(learning_rate=0.0001, amsgrad=True), # RMSprop(), # (learning_rate=1e-4),
-                  metrics=["accuracy"], run_eagerly=True)
+    x_4 = cba(inputs, filters=32, kernel_size=(1, 64), strides=(1, 2))
+    x_4 = cba(x_4, filters=32, kernel_size=(64, 1), strides=(2, 1))
+    x_4 = cba(x_4, filters=64, kernel_size=(1, 64), strides=(1, 2))
+    x_4 = cba(x_4, filters=64, kernel_size=(64, 1), strides=(2, 1))
 
+    x = Add()([x_1, x_2, x_3, x_4])
+
+    x = cba(x, filters=128, kernel_size=(1, 16), strides=(1, 2))
+    x = cba(x, filters=128, kernel_size=(16, 1), strides=(2, 1))
+
+    x = GlobalAveragePooling2D()(x)
+
+    x = L2ConstrainLayer()(x)
+
+    x = Dense(num_of_category)(x)
+    x = Activation("softmax")(x)
+
+    model = Model(inputs, x)
     model.summary()
+
+    # initiate Adam optimizer
+    opt = Adam(learning_rate=0.0001) #, decay=1e-6, amsgrad=True)
+
+    model.compile(optimizer=opt, loss="categorical_crossentropy", metrics=["accuracy"])
 
     # callback function
     csv_cb = CSVLogger("../logs/models/train_log.csv")
@@ -171,15 +207,13 @@ def main(epochs=5, batch_size=128):
     es_cb = EarlyStopping(monitor="val_loss", patience=2, verbose=1, mode="auto")
     tb_cb = TensorBoard(log_dir="../logs/tensor_board", histogram_freq=1)
 
-    #Fitting data to the model
-    history = model.fit(
-        x=X_train, y=y_train,
-        # steps_per_epoch=X_train.shape[0] // batch_size,
-        batch_size=batch_size,
-        epochs=epochs,
-        validation_split=0.1,
-        callbacks=[csv_cb, cp_cb, tb_cb], # , es_cb],
-        verbose=1)
+    #cnnの学習
+    history = model.fit(x=X_train, y=y_train,
+                        validation_split=0.1,
+                        epochs=epochs,
+                        callbacks=[csv_cb, cp_cb, tb_cb], # , es_cb],
+                        verbose=1,
+                        batch_size=batch_size)
 
     # result
     score = model.evaluate(X_test, y_test, verbose=0)
@@ -194,60 +228,62 @@ def main(epochs=5, batch_size=128):
     model.save("../logs/models/model.h5")
     joblib.dump(scaler, "../logs/models/scaler.joblib")
 
-    output_model = Model(inputs=model.input, outputs=model.layers[-2].output)
+    output_model = Model(inputs=model.input, outputs=model.layers[-3].output)
+    output_model.summary()
+
     plot_tsene(X=X_test, model=model, output_model=output_model)
 
-    y_train_normal = np.argmax(y_train, axis=1)
-    X_train_normal = []
+    y_train_normals = np.argmax(y_train, axis=1)
+    X_train_normals = []
 
     for index, X in enumerate(X_train):
-        if y_train_normal[index] == 1:
-            X_train_normal.append(X)
+        if y_train_normals[index] == 1:
+            X_train_normals.append(X)
 
-    y_test_normal = np.argmax(y_test, axis=1)
-    X_test_normal = []
-    X_test_abnormal = []
+    y_test_normals = np.argmax(y_test, axis=1)
+    X_test_normals = []
+    X_test_abnormals = []
 
     for index, X in enumerate(X_test):
-        if y_test_normal[index] == 1:
-            X_test_normal.append(X)
+        if y_test_normals[index] == 1:
+            X_test_normals.append(X)
         else:
-            X_test_abnormal.append(X)
+            X_test_abnormals.append(X)
 
-    X_train_normal = np.array(X_train_normal)
-    X_test_normal = np.array(X_test_normal)
-    X_test_abnormal = np.array(X_test_abnormal)
+    X_train_normals = np.array(X_train_normals)
+    X_test_normals = np.array(X_test_normals)
+    X_test_abnormals = np.array(X_test_abnormals)
 
-    train = output_model.predict(X_train_normal, batch_size=1)
-    test_normal = output_model.predict(X_test_normal, batch_size=1)
-    test_abnormal = output_model.predict(X_test_abnormal, batch_size=1)
+    trains = output_model.predict(X_train_normals, batch_size=1)
+    test_normals = output_model.predict(X_test_normals, batch_size=1)
+    test_abnormals = output_model.predict(X_test_abnormals, batch_size=1)
 
-    train = train.reshape((len(train), -1))
-    test_normal = test_normal.reshape((len(test_normal), -1))
-    test_abnormal = test_abnormal.reshape((len(test_abnormal), -1))
+    trains = trains.reshape((len(trains), -1))
+    test_normals = test_normals.reshape((len(test_normals), -1))
+    test_abnormals = test_abnormals.reshape((len(test_abnormals), -1))
 
     lof_scaler = MinMaxScaler()
-    lof_scaler.fit_transform(train)
-    lof_scaler.transform(test_normal)
-    lof_scaler.transform(test_abnormal)
+    lof_scaler.fit_transform(trains)
+    lof_scaler.transform(test_normals)
+    lof_scaler.transform(test_abnormals)
 
     lof_model = LocalOutlierFactor(n_neighbors=5, novelty=True) # 20, novelty=True, contamination=0.001)
 
-    if len(train) >= 1000:
+    if len(trains) >= 1000:
         train_length = 1000
     else:
-        train_length = len(train)
+        train_length = len(trains)
 
     print("\nanomaly detection model creating...\n")
-    lof_model.fit(train[:train_length])
+    lof_model.fit(trains[:train_length])
 
     joblib.dump(lof_scaler, "../logs/models/lof_scaler.joblib")
     joblib.dump(lof_model, "../logs/models/lof_model.joblib", compress=True)
 
-    Z1 = -1 * lof_model.decision_function(test_normal)
-    Z2 = -1 * lof_model.decision_function(test_abnormal)
+    Z1 = -1 * lof_model.decision_function(test_normals)
+    Z2 = -1 * lof_model.decision_function(test_abnormals)
 
-    y_preds = lof_model.predict(np.concatenate([test_normal, test_abnormal]))
+    y_preds = lof_model.predict(np.concatenate([test_normals, test_abnormals]))
 
     for index, y_pred in enumerate(y_preds):
         if y_pred == -1:
@@ -255,24 +291,26 @@ def main(epochs=5, batch_size=128):
         else:
             y_preds[index] = 0
 
-    y_trues = np.zeros(len(test_normal) + len(test_abnormal))
-    y_trues[len(test_normal):] = 1
+    y_trues = np.zeros(len(test_normals) + len(test_abnormals))
+    y_trues[len(test_normals):] = 1
 
     cm = confusion_matrix(y_trues, y_preds)
     pe.plot_confusion_matrix(cm, "../logs/graphs/confusion_matrix.png")
     print(cm)
 
+    results = []
+
     accuracy = accuracy_score(y_trues, y_preds) * 100.0
-    # results.append(["accuracy: {}%".format(accuracy)])
+    results.append(["accuracy: {}%".format(accuracy)])
 
     precision = precision_score(y_trues, y_preds)
-    # results.append(["precision: {}".format(precision)])
+    results.append(["precision: {}".format(precision)])
 
     recall = recall_score(y_trues, y_preds)
-    # results.append(["recall: {}".format(recall)])
+    results.append(["recall: {}".format(recall)])
 
     f1 = f1_score(y_trues, y_preds)
-    # results.append(["f1_score: {}".format(f1)])
+    results.append(["f1_score: {}".format(f1)])
 
     print("\nAccuracy: {}%".format(accuracy))
     print("Precision: {}".format(precision))
@@ -283,10 +321,12 @@ def main(epochs=5, batch_size=128):
     roc_auc = pe.plot_roc_curve(y_trues, y_scores, "../logs/graphs/roc_curve.png")
     pr_auc = pe.plot_pr_curve(y_trues, y_scores, "../logs/graphs/pr_curve.png")
 
-    # results.append(["ROC-AUC: {}".format(roc_auc)])
-    # results.append(["PR-AUC: {}".format(pr_auc)])
+    results.append(["ROC-AUC: {}".format(roc_auc)])
+    results.append(["PR-AUC: {}".format(pr_auc)])
 
     K.clear_session()
+    ft.write_csv("../logs/result.csv", results)
+
     print("\nall process was completed...")
 
 
@@ -296,8 +336,8 @@ if __name__ == "__main__":
     answer = input("モデルを構築しますか？ 古いモデルは上書きされます。(Y/n)\n")
 
     if answer == "Y" or answer == "y" or answer == "":
-        epochs = 200
-        batch_size = 128
+        epochs = 120
+        batch_size = 20
         main(epochs, batch_size)
     else:
         exit()
