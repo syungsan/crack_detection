@@ -71,19 +71,20 @@ def main():
 
     model = load_metrics_model(best_metrics_model)
     scaler, lof_model, lof_scaler = load_const_models()
-    output_model = Model(inputs=model.input, outputs=model.layers[-2].output)
+    output_model = Model(inputs=model.input, outputs=model.layers[-3].output)
 
     rd.set_input_device()
     rd.recording("../temp/pred.wav")
 
-    mfccs = ft.get_mfcc_librosa("../temp/pred.wav")
-    features = ft.interval_division_average(mfccs, ft.interval_division_number)
+    wave, sr = ft.load_wave_librosa("../temp/pred.wav")
+    features = ft.calculate_sp(wave).tolist()
 
+    features = ft.interval_division_average(features, ft.interval_division_number)
     features = ft.flatten_with_any_depth(features)
     X = [float(x) for x in features]
 
     scaler.transform([X])
-    X = np.reshape(X, (1, ft.interval_division_number, ft.feature_max_length), order="F")
+    X = np.reshape(X, (1, 257, ft.interval_division_number, 1), order="F")
 
     y_preds, scores = predict(output_model, lof_model, lof_scaler, X)
 

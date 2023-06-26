@@ -42,7 +42,7 @@ def main():
 
     scaler, lof_model, lof_scaler = pr.load_const_models()
     scaler.transform(X_test)
-    X_test = np.reshape(X_test, (X_test.shape[0], ft.interval_division_number, ft.feature_max_length), order="F")
+    X_test = np.reshape(X_test, (X_test.shape[0], 257, ft.interval_division_number, 1), order="F")
 
     metrics_models = glob.glob("../logs/models/*.h5")
 
@@ -58,7 +58,7 @@ def main():
 
         result = [os.path.basename(metrics_model), score[0], score[1]]
 
-        output_model = Model(inputs=_model.input, outputs=_model.layers[-2].output)
+        output_model = Model(inputs=_model.input, outputs=_model.layers[-3].output)
         y_preds, _ = pr.predict(output_model, lof_model, lof_scaler, X_test)
 
         for index, y_pred in enumerate(y_preds):

@@ -6,17 +6,13 @@ import codecs
 import csv
 import librosa
 import librosa.feature
-import scipy.signal
 import glob
 from statistics import mean
 import numpy as np
-import warnings
 
 
 # 1セクションの分割数
-interval_division_number = 200
-
-feature_max_length = 39
+interval_division_number = 100
 
 # Label
 wav_labels = ["abnormal", "normal"]
@@ -60,61 +56,13 @@ def load_wave_librosa(file_path):
     return wave, sr
 
 
-# 高域強調
-def preEmphasis(wave, p=0.97):
+# change wave data to stft
+def calculate_sp(x, n_fft=512, hop_length=256):
 
-    # 係数 (1.0, -p) のFIRフィルタを作成
-    return scipy.signal.lfilter([1.0, -p], 1, wave)
+    stft = librosa.stft(x, n_fft=n_fft, hop_length=hop_length)
+    sp = librosa.amplitude_to_db(np.abs(stft))
 
-
-def get_mfcc_librosa(file_path):
-
-    wave, sr = load_wave_librosa(file_path)
-
-    p = 0.97
-    wave = preEmphasis(wave, p)
-
-    n_fft = 512 # ウィンドウサイズ
-    hop_length_sec = 0.010 # ずらし幅（juliusの解像度に合わせる）
-    n_mfcc = 13 # mfccの次元数
-
-    # mfccを求める
-    warnings.simplefilter('ignore', FutureWarning)
-    mfccs = librosa.feature.mfcc(wave, n_fft=n_fft, hop_length=librosa.time_to_samples(hop_length_sec, sr),
-                                 sr=sr, n_mfcc=n_mfcc)
-    warnings.resetwarnings()
-
-    # mfccの1次元はいらないから消す
-    mfccs = np.delete(mfccs, 0, axis=0)
-
-    # 対数パワー項を末尾に追加
-    S = cal_logpower_librosa(wave, sr)
-    mfccs = np.vstack((mfccs, S))
-
-    # mfcc delta* を計算する
-    delta_mfccs  = librosa.feature.delta(mfccs)  # mfcc delta
-    delta2_mfccs = librosa.feature.delta(mfccs, order=2)  # mfcc delta2
-
-    all_mfccs = mfccs.tolist() + delta_mfccs.tolist() + delta2_mfccs.tolist()
-
-    return all_mfccs
-
-
-# 対数パワースペクトルの計算
-def cal_logpower_librosa(wave, sr):
-
-    n_fft = 512 # ウィンドウサイズ
-    hop_length_sec = 0.010 # ずらし幅
-
-    warnings.simplefilter('ignore', FutureWarning)
-    S = librosa.feature.melspectrogram(wave, sr=sr, n_fft=n_fft,
-                                       hop_length=librosa.time_to_samples(hop_length_sec, sr))
-    warnings.resetwarnings()
-
-    S = sum(S)
-    PS = librosa.power_to_db(S)
-
-    return PS
+    return sp
 
 
 def interval_division_average(list2ds, division_number):
@@ -192,8 +140,10 @@ def main():
             wav_files = glob.glob("{}/{}/{}/*.wav".format(target_dir, wav_dir, wav_label))
             for j, wav_file in enumerate(wav_files):
 
-                mfccs = get_mfcc_librosa(wav_file)
-                features = interval_division_average(mfccs, interval_division_number)
+                wave, sr = load_wave_librosa(wav_file)
+                features = calculate_sp(wave).tolist()
+
+                features = interval_division_average(features, interval_division_number)
                 features = flatten_with_any_depth(features)
 
                 features.insert(0, i)

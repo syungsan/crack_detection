@@ -5,7 +5,7 @@ import keras
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
-from sklearn.model_selection import train_test_split
+# from sklearn.model_selection import train_test_split
 from keras.models import Model
 from sklearn.neighbors import LocalOutlierFactor
 import joblib
@@ -18,23 +18,25 @@ import shutil
 from keras.callbacks import CSVLogger, EarlyStopping, TensorBoard, ModelCheckpoint
 from sklearn.manifold import TSNE
 import feature as ft
+import plot_evaluation as pe
+from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, f1_score
 
 
-lof_contamination = 0.07
+alpha = 16. # 30.
 
 
 # L2-constrained Softmax Loss
-#This is custom layer way
+# This is custom layer way
 # If you use trainable variables, you should write this way
 # ref : https://www.tensorflow.org/api_docs/python/tf/keras/layers/Lambda#variables
 class L2ConstrainLayer(tf.keras.layers.Layer):
 
     def __init__(self, **kwargs):
         super(L2ConstrainLayer, self).__init__(**kwargs)
-        self.alpha = tf.Variable(30.) # 16.
+        self.alpha = tf.Variable(alpha)
 
     def call(self, inputs):
-        #about l2_normalize https://www.tensorflow.org/api_docs/python/tf/keras/backend/l2_normalize?hl=ja
+        # about l2_normalize https://www.tensorflow.org/api_docs/python/tf/keras/backend/l2_normalize?hl=ja
         return K.l2_normalize(inputs, axis=1) * self.alpha
 
 
@@ -111,43 +113,34 @@ def get_data(data2ds):
     return np.array(X), ys
 
 
-# 異常検出モデルの作成
-def lof(output_model, X_train):
-
-    X_train = output_model.predict(X_train)
-    X_train = X_train.reshape((len(X_train), -1))
-
-    lof_scaler = MinMaxScaler()
-    lof_scaler.fit(X_train)
-    lof_scaler.transform(X_train)
-
-    print("anomaly detection model creating...")
-    # contamination = 学習データにおける外れ値の割合（大きいほど厳しく小さいほど緩い）{ 0.0 ~ 0.5 }
-    # example-> k(n_neighbors=10**0.5=3) 10=num of class
-    model = LocalOutlierFactor(n_neighbors=2, novelty=True, contamination=lof_contamination) # 20, novelty=True, contamination=0.001)
-    model.fit(X_train[:1000])
-
-    joblib.dump(lof_scaler, "../logs/models/lof_scaler.joblib")
-    joblib.dump(model, "../logs/models/lof_model.joblib", compress=True)
-
-
 def main(epochs=5, batch_size=128):
 
     if os.path.isdir("../logs/models"):
         shutil.rmtree("../logs/models")
-    os.mkdir("../logs/models")
+    os.makedirs("../logs/models", exist_ok=True)
 
     if os.path.isdir("../logs/graphs"):
         shutil.rmtree("../logs/graphs")
     os.mkdir("../logs/graphs")
 
-    features = ft.read_csv(file_path="../logs/train.csv", delimiter=",")
-    X, y = get_data(data2ds=features)
+    if os.path.exists("../logs/result.csv"):
+        os.remove("../logs/result.csv")
+
+    if os.path.isdir("../logs/tensor_board"):
+        shutil.rmtree("../logs/tensor_board")
+
+    trains = ft.read_csv(file_path="../logs/train.csv", delimiter=",")
+    X_train, y_train = get_data(data2ds=trains)
+
+    tests = ft.read_csv(file_path="../logs/test.csv", delimiter=",")
+    X_test, y_test = get_data(data2ds=tests)
 
     # one-hot vector形式に変換する
     num_of_category = len(ft.wav_labels)
-    y = to_categorical(y, num_of_category)
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1)
+    y_train = to_categorical(y_train, num_of_category)
+    y_test = to_categorical(y_test, num_of_category)
+
+    # X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1)
 
     scaler = MinMaxScaler()
     scaler.fit(X_train)
@@ -175,8 +168,7 @@ def main(epochs=5, batch_size=128):
     model.add(layers.Lambda(l2_constrain))
     """
 
-    l2con = L2ConstrainLayer()
-    model.add(l2con)
+    model.add(L2ConstrainLayer())
     model.add(keras.layers.Dense(num_of_category, activation='softmax'))
 
     #Compiling the model
@@ -217,10 +209,103 @@ def main(epochs=5, batch_size=128):
     joblib.dump(scaler, "../logs/models/scaler.joblib")
 
     output_model = Model(inputs=model.input, outputs=model.layers[-2].output)
+
     plot_tsene(X=X_test, model=model, output_model=output_model)
-    lof(output_model=output_model, X_train=X_train)
+
+    y_train_normals = np.argmax(y_train, axis=1)
+    X_train_normals = []
+
+    for index, X in enumerate(X_train):
+        if y_train_normals[index] == 1:
+            X_train_normals.append(X)
+
+    y_test_normals = np.argmax(y_test, axis=1)
+    X_test_normals = []
+    X_test_abnormals = []
+
+    for index, X in enumerate(X_test):
+        if y_test_normals[index] == 1:
+            X_test_normals.append(X)
+        else:
+            X_test_abnormals.append(X)
+
+    X_train_normals = np.array(X_train_normals)
+    X_test_normals = np.array(X_test_normals)
+    X_test_abnormals = np.array(X_test_abnormals)
+
+    trains = output_model.predict(X_train_normals, batch_size=1)
+    test_normals = output_model.predict(X_test_normals, batch_size=1)
+    test_abnormals = output_model.predict(X_test_abnormals, batch_size=1)
+
+    trains = trains.reshape((len(trains), -1))
+    test_normals = test_normals.reshape((len(test_normals), -1))
+    test_abnormals = test_abnormals.reshape((len(test_abnormals), -1))
+
+    lof_scaler = MinMaxScaler()
+    lof_scaler.fit_transform(trains)
+    lof_scaler.transform(test_normals)
+    lof_scaler.transform(test_abnormals)
+
+    lof_model = LocalOutlierFactor(n_neighbors=5, novelty=True) # 20, novelty=True, contamination=0.001)
+
+    if len(trains) >= 1000:
+        train_length = 1000
+    else:
+        train_length = len(trains)
+
+    print("\nanomaly detection model creating...\n")
+    lof_model.fit(trains[:train_length])
+
+    joblib.dump(lof_scaler, "../logs/models/lof_scaler.joblib")
+    joblib.dump(lof_model, "../logs/models/lof_model.joblib", compress=True)
+
+    Z1 = -1 * lof_model.decision_function(test_normals)
+    Z2 = -1 * lof_model.decision_function(test_abnormals)
+
+    y_preds = lof_model.predict(np.concatenate([test_normals, test_abnormals]))
+
+    for index, y_pred in enumerate(y_preds):
+        if y_pred == -1:
+            y_preds[index] = 1
+        else:
+            y_preds[index] = 0
+
+    y_trues = np.zeros(len(test_normals) + len(test_abnormals))
+    y_trues[len(test_normals):] = 1
+
+    cm = confusion_matrix(y_trues, y_preds)
+    pe.plot_confusion_matrix(cm, "../logs/graphs/confusion_matrix.png")
+    print(cm)
+
+    results = []
+
+    accuracy = accuracy_score(y_trues, y_preds) * 100.0
+    results.append(["accuracy: {}%".format(accuracy)])
+
+    precision = precision_score(y_trues, y_preds)
+    results.append(["precision: {}".format(precision)])
+
+    recall = recall_score(y_trues, y_preds)
+    results.append(["recall: {}".format(recall)])
+
+    f1 = f1_score(y_trues, y_preds)
+    results.append(["f1_score: {}".format(f1)])
+
+    print("\nAccuracy: {}%".format(accuracy))
+    print("Precision: {}".format(precision))
+    print("Recall: {}".format(recall))
+    print("F1Score: {}".format(f1))
+
+    y_scores = np.hstack((Z1, Z2))
+    roc_auc = pe.plot_roc_curve(y_trues, y_scores, "../logs/graphs/roc_curve.png")
+    pr_auc = pe.plot_pr_curve(y_trues, y_scores, "../logs/graphs/pr_curve.png")
+
+    results.append(["ROC-AUC: {}".format(roc_auc)])
+    results.append(["PR-AUC: {}".format(pr_auc)])
 
     K.clear_session()
+    ft.write_csv("../logs/result.csv", results)
+
     print("\nall process was completed...")
 
 
@@ -230,7 +315,7 @@ if __name__ == "__main__":
     answer = input("モデルを構築しますか？ 古いモデルは上書きされます。(Y/n)\n")
 
     if answer == "Y" or answer == "y" or answer == "":
-        epochs = 200
+        epochs = 600
         batch_size = 128
         main(epochs, batch_size)
     else:
