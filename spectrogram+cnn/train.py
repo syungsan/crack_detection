@@ -336,7 +336,7 @@ if __name__ == "__main__":
     answer = input("モデルを構築しますか？ 古いモデルは上書きされます。(Y/n)\n")
 
     if answer == "Y" or answer == "y" or answer == "":
-        epochs = 120
+        epochs = 200
         batch_size = 20
         main(epochs, batch_size)
     else:

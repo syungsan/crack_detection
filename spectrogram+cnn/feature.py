@@ -12,7 +12,7 @@ import numpy as np
 
 
 # 1セクションの分割数
-interval_division_number = 100
+interval_division_number = 200
 
 # Label
 wav_labels = ["abnormal", "normal"]
