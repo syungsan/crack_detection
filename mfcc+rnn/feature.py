@@ -157,6 +157,7 @@ def flatten_with_any_depth(nested_list):
 
     while len(fringe) > 0:
         node = fringe.pop(0)
+
         # ノードがリストであれば子要素をフリンジに追加
         # リストでなければそのままフラットリストに追加
         if isinstance(node, list):
