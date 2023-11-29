@@ -80,8 +80,7 @@ def get_mfcc_librosa(file_path):
 
     # mfccを求める
     warnings.simplefilter('ignore', FutureWarning)
-    mfccs = librosa.feature.mfcc(wave, n_fft=n_fft, hop_length=librosa.time_to_samples(hop_length_sec, sr),
-                                 sr=sr, n_mfcc=n_mfcc)
+    mfccs = librosa.feature.mfcc(wave, n_fft=n_fft, hop_length=librosa.time_to_samples(hop_length_sec, sr), sr=sr, n_mfcc=n_mfcc)
     warnings.resetwarnings()
 
     # mfccの1次元はいらないから消す
@@ -107,8 +106,7 @@ def cal_logpower_librosa(wave, sr):
     hop_length_sec = 0.010 # ずらし幅
 
     warnings.simplefilter('ignore', FutureWarning)
-    S = librosa.feature.melspectrogram(wave, sr=sr, n_fft=n_fft,
-                                       hop_length=librosa.time_to_samples(hop_length_sec, sr))
+    S = librosa.feature.melspectrogram(wave, sr=sr, n_fft=n_fft, hop_length=librosa.time_to_samples(hop_length_sec, sr))
     warnings.resetwarnings()
 
     S = sum(S)
