@@ -115,24 +115,24 @@ def get_data(data2ds):
 
 def main(epochs=5, batch_size=128):
 
-    if os.path.isdir("../logs/models"):
-        shutil.rmtree("../logs/models")
-    os.makedirs("../logs/models", exist_ok=True)
+    if os.path.isdir("../../../crack_detection/crack_detection/logs/models"):
+        shutil.rmtree("../../../crack_detection/crack_detection/logs/models")
+    os.makedirs("../../../crack_detection/crack_detection/logs/models", exist_ok=True)
 
-    if os.path.isdir("../logs/graphs"):
-        shutil.rmtree("../logs/graphs")
-    os.mkdir("../logs/graphs")
+    if os.path.isdir("../../../crack_detection/crack_detection/logs/graphs"):
+        shutil.rmtree("../../../crack_detection/crack_detection/logs/graphs")
+    os.mkdir("../../../crack_detection/crack_detection/logs/graphs")
 
-    if os.path.exists("../logs/result.csv"):
-        os.remove("../logs/result.csv")
+    if os.path.exists("../../../crack_detection/crack_detection/logs/result.csv"):
+        os.remove("../../../crack_detection/crack_detection/logs/result.csv")
 
-    if os.path.isdir("../logs/tensor_board"):
-        shutil.rmtree("../logs/tensor_board")
+    if os.path.isdir("../../../crack_detection/crack_detection/logs/tensor_board"):
+        shutil.rmtree("../../../crack_detection/crack_detection/logs/tensor_board")
 
-    trains = ft.read_csv(file_path="../logs/train.csv", delimiter=",")
+    trains = ft.read_csv(file_path="../../../crack_detection/crack_detection/logs/train.csv", delimiter=",")
     X_train, y_train = get_data(data2ds=trains)
 
-    tests = ft.read_csv(file_path="../logs/test.csv", delimiter=",")
+    tests = ft.read_csv(file_path="../../../crack_detection/crack_detection/logs/test.csv", delimiter=",")
     X_test, y_test = get_data(data2ds=tests)
 
     # one-hot vector形式に変換する
@@ -179,11 +179,11 @@ def main(epochs=5, batch_size=128):
     model.summary()
 
     # callback function
-    csv_cb = CSVLogger("../logs/models/train_log.csv")
+    csv_cb = CSVLogger("../../../crack_detection/crack_detection/logs/models/train_log.csv")
     fpath = "../logs/models/model-{epoch:02d}-{loss:.2f}-{accuracy:.2f}-{val_loss:.2f}-{val_accuracy:.2f}-.h5"
     cp_cb = ModelCheckpoint(filepath=fpath, monitor="val_loss", verbose=1, save_best_only=True, mode="auto")
     es_cb = EarlyStopping(monitor="val_loss", patience=2, verbose=1, mode="auto")
-    tb_cb = TensorBoard(log_dir="../logs/tensor_board", histogram_freq=1)
+    tb_cb = TensorBoard(log_dir="../../../crack_detection/crack_detection/logs/tensor_board", histogram_freq=1)
 
     #Fitting data to the model
     history = model.fit(
