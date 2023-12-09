@@ -13,6 +13,10 @@ import predict as pr
 import glob
 from sklearn.metrics import roc_curve, auc, precision_recall_curve
 from keras.utils import to_categorical
+import plot_evaluation as pe
+
+
+is_anomaly_detect = False
 
 
 class L2ConstrainLayer(tf.keras.layers.Layer):
@@ -57,18 +61,31 @@ def main():
         print("Test accuracy: {}".format(score[1]))
 
         result = [os.path.basename(metrics_model), score[0], score[1]]
+        y_pred_prob = []
 
-        output_model = Model(inputs=_model.input, outputs=_model.layers[-3].output)
-        y_preds, _ = pr.predict(output_model, lof_model, lof_scaler, X_test)
+        if is_anomaly_detect:
 
-        for index, y_pred in enumerate(y_preds):
+            output_model = Model(inputs=_model.input, outputs=_model.layers[-2].output)
+            y_preds, _ = pr.predict(output_model, lof_model, lof_scaler, X_test)
 
-            if y_pred == -1:
-                y_preds[index] = 0
-            else:
-                y_preds[index] = 1
+            for index, y_pred in enumerate(y_preds):
+
+                if y_pred == -1:
+                    y_preds[index] = 0
+                else:
+                    y_preds[index] = 1
+
+        else:
+            # `evaluate`メソッドは損失値と評価指標を返しますが、ここでは混同行列を取得するためには不要です
+            # 予測結果を得るために`predict`メソッドを使用します
+            y_pred_prob = _model.predict(X_test)
+
+            # 予測確率からクラスを取得
+            y_preds = np.argmax(y_pred_prob, axis=1)
 
         cm = confusion_matrix(y_trues, y_preds)
+        pe.plot_confusion_matrix(cm, "../logs/graphs/test_confusion_matrix_anomaly-{}_model-{}.png"
+                                 .format(is_anomaly_detect, os.path.basename(metrics_model)))
         print("\n")
         print(cm)
 
@@ -90,31 +107,40 @@ def main():
         print("Recall: {}".format(recall))
         print("F1Score: {}".format(f1))
 
-        X_test_normals = []
-        X_test_abnormals = []
+        if is_anomaly_detect:
 
-        for index, X in enumerate(X_test):
-            if y_trues[index] == 1:
-                X_test_normals.append(X)
-            else:
-                X_test_abnormals.append(X)
+            X_test_normals = []
+            X_test_abnormals = []
 
-        X_test_normals = np.array(X_test_normals)
-        X_test_abnormals = np.array(X_test_abnormals)
+            for index, X in enumerate(X_test):
+                if y_trues[index] == 1:
+                    X_test_normals.append(X)
+                else:
+                    X_test_abnormals.append(X)
 
-        test_normals = output_model.predict(X_test_normals, batch_size=1)
-        test_abnormals = output_model.predict(X_test_abnormals, batch_size=1)
+            X_test_normals = np.array(X_test_normals)
+            X_test_abnormals = np.array(X_test_abnormals)
 
-        test_normals = test_normals.reshape((len(test_normals), -1))
-        test_abnormals = test_abnormals.reshape((len(test_abnormals), -1))
+            test_normals = output_model.predict(X_test_normals, batch_size=1)
+            test_abnormals = output_model.predict(X_test_abnormals, batch_size=1)
 
-        Z1 = -1 * lof_model.decision_function(test_normals)
-        Z2 = -1 * lof_model.decision_function(test_abnormals)
+            test_normals = test_normals.reshape((len(test_normals), -1))
+            test_abnormals = test_abnormals.reshape((len(test_abnormals), -1))
 
-        y_scores = np.hstack((Z1, Z2))
+            Z1 = -1 * lof_model.decision_function(test_normals)
+            Z2 = -1 * lof_model.decision_function(test_abnormals)
+            y_scores = np.hstack((Z1, Z2))
+
+        else:
+            y_scores = y_pred_prob[:, 1]
 
         fpr, tpr, thresholds = roc_curve(y_trues, y_scores)
         _auc = auc(fpr, tpr)
+
+        pe.plot_roc_curve(y_trues, y_scores, "../logs/graphs/test_roc_curve_anomaly-{}_model-{}.png"
+                          .format(is_anomaly_detect, os.path.basename(metrics_model)))
+        pe.plot_pr_curve(y_trues, y_scores, "../logs/graphs/test_pr_curve_anomaly-{}_model-{}.png"
+                         .format(is_anomaly_detect, os.path.basename(metrics_model)))
 
         print("ROC-AUC {}".format(_auc))
         result += [_auc]
@@ -128,11 +154,14 @@ def main():
         results.append(result)
 
     best_model = os.path.basename(metrics_models[np.argmax(np.array(accuracies))])
+    best_accuracy = "{}%".format(max(accuracies))
 
     print("\nbest model == {}".format(best_model))
+    print("best accuracy == {}%".format(max(accuracies)))
     results.append([])
     results.append(["best model"])
     results.append([best_model])
+    results.append([best_accuracy])
 
     ft.write_csv("../logs/all_result.csv", results)
     print("\nall process completed...")
