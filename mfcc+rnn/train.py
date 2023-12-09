@@ -56,7 +56,7 @@ def plot_result(history):
     plt.grid()
     plt.legend(loc="best")
     plt.title("Accuracy")
-    plt.savefig("../logs/graphs/accuracy.png")
+    plt.savefig("../logs/graphs/accuracy.png".format(ft.target))
     plt.show()
 
     # loss
@@ -315,7 +315,7 @@ if __name__ == "__main__":
     answer = input("モデルを構築しますか？ 古いモデルは上書きされます。(Y/n)\n")
 
     if answer == "Y" or answer == "y" or answer == "":
-        epochs = 600
+        epochs = 200
         batch_size = 128
         main(epochs, batch_size)
     else:

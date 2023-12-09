@@ -17,7 +17,7 @@ interval_division_number = 200
 # Label
 wav_labels = ["abnormal", "normal"]
 
-target_sound = "fan"
+target = "tile"
 
 
 def read_csv(file_path, delimiter):
@@ -120,7 +120,7 @@ def main():
     if not os.path.exists("../logs"):
         os.mkdir("../logs")
 
-    target_dir = "../data/{}".format(target_sound)
+    target_dir = "../data/{}".format(target)
     wav_dirs = os.listdir(target_dir)
 
     max_length = 0
@@ -156,10 +156,10 @@ def main():
                 process_count += 1
                 print("{} processed. == {:.2f}%".format(wav_file, process_count / max_length * 100.0))
 
-    test_abnormals = abnormals[:50]
-    train_abnormals = abnormals[50:]
-    test_normals = normals[:50]
-    train_normals = normals[50:]
+    test_abnormals = abnormals[:100]
+    train_abnormals = abnormals[100:]
+    test_normals = normals[:100]
+    train_normals = normals[100:]
 
     trains = train_abnormals + train_normals
     tests = test_abnormals + test_normals
